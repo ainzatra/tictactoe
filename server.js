@@ -5,7 +5,6 @@ const path = require('path');
 const os = require('os');
 
 const app = express();
-const router = express.Router();
 const server = http.createServer(app);
 const io = new Server(server);
 
@@ -16,16 +15,14 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.get("/chat", (req, res) => {
     return res.sendFile(path.join(__dirname, "public", "chat-room.html"));
 });
+
+app.get("/gc", (req, res) => {
+    return res.sendFile(path.join(__dirname, "public", "group-chat.html"));
+});
 app.get("/tictactoe", (req, res) => {
     return res.sendFile(path.join(__dirname, "public", "index.html"));
 });
-// Tic-Tac-Toe variables
-let players = {};
-let currentTurn = 'O';
-let waitingUser = null; // Store one waiting user for chat
-let rooms = {}; // key: roomId, value: [socket.id, socket.id]
 
-// Function to get local IP
 function getLocalIP() {
     const interfaces = os.networkInterfaces();
     for (let iface in interfaces) {
@@ -38,37 +35,66 @@ function getLocalIP() {
     return 'localhost';
 }
 
-// Tic-Tac-Toe Game Handling
-io.on('connection', (socket) => {
-    console.log('A user connected:', socket.id);
 
-    // Game handling logic
+let gameNamespaceIPs = {};  // Store IPs for the game namespace
+let chatNamespaceIPs = {};  // Store IPs for the chat namespace
+let gcNamespaceIPs = {};    // Store IPs for the group chat namespace
+
+const gameNameSpace = io.of('/game');
+let players = {};
+let currentTurn = 'O';
+
+gameNameSpace.on('connection', (socket) => {
+    console.log('Game user connected:', socket.id);
+
+    const userIP = socket.handshake.address;
+    if (gameNamespaceIPs[userIP]) {
+        socket.emit('ip-blocked', 'You are already in a game room.');
+        return;
+    }
+    gameNamespaceIPs[userIP] = socket.id;
+
     if (Object.keys(players).length < 2) {
         players[socket.id] = Object.keys(players).length === 0 ? 'O' : 'X';
         socket.emit('player-assigned', players[socket.id]);
-        io.emit('player-count', Object.keys(players).length);
+        gameNameSpace.emit('player-count', Object.keys(players).length);
     } else {
         socket.emit('room-full');
     }
 
     socket.on('tile-clicked', (index) => {
-        io.emit('update-tile', { index, value: players[socket.id] });
+        gameNameSpace.emit('update-tile', { index, value: players[socket.id] });
         currentTurn = currentTurn === 'O' ? 'X' : 'O';
-        io.emit('turn-changed', currentTurn);
+        gameNameSpace.emit('turn-changed', currentTurn);
     });
 
     socket.on('reset', () => {
         currentTurn = 'O';
-        io.emit('reset-board');
+        gameNameSpace.emit('reset-board');
     });
 
     socket.on('disconnect', () => {
+        delete gameNamespaceIPs[userIP];
         delete players[socket.id];
-        io.emit('player-count', Object.keys(players).length);
+        gameNameSpace.emit('player-count', Object.keys(players).length);
         console.log('A user disconnected:', socket.id);
     });
+});
 
-    // Chatroom matching logic
+const chatNameSpace = io.of('/chat');
+let waitingUser = null;
+let rooms = {};
+
+chatNameSpace.on('connection', (socket) => {
+    console.log('Chat user connected:', socket.id);
+
+    const userIP = socket.handshake.address;
+    if (chatNamespaceIPs[userIP]) {
+        socket.emit('ip-blocked', 'You are already in a chat room.');
+        return;
+    }
+    chatNamespaceIPs[userIP] = socket.id;
+
     if (waitingUser) {
         const roomId = `room-${socket.id}-${waitingUser.id}`;
         socket.join(roomId);
@@ -77,7 +103,7 @@ io.on('connection', (socket) => {
         rooms[roomId] = [socket.id, waitingUser.id];
 
         // Notify both users
-        io.to(roomId).emit('match-found', { roomId });
+        chatNameSpace.to(roomId).emit('match-found', { roomId });
 
         console.log(`Matched ${socket.id} with ${waitingUser.id} in ${roomId}`);
         waitingUser = null;
@@ -87,15 +113,13 @@ io.on('connection', (socket) => {
         console.log(`${socket.id} is waiting...`);
     }
 
-    // Chat message handling
     socket.on('message', ({ roomId, text }) => {
         socket.to(roomId).emit('message', text);
     });
 
-    // Disconnecting logic in chat
     socket.on('disconnect', () => {
+        delete chatNamespaceIPs[userIP];
         console.log('User disconnected:', socket.id);
-
         if (waitingUser?.id === socket.id) {
             waitingUser = null;
         }
@@ -103,16 +127,64 @@ io.on('connection', (socket) => {
         for (const roomId in rooms) {
             if (rooms[roomId].includes(socket.id)) {
                 const otherSocketId = rooms[roomId].find(id => id !== socket.id);
-                io.to(otherSocketId).emit('partner-disconnected');
+                chatNameSpace.to(otherSocketId).emit('partner-disconnected');
                 delete rooms[roomId];
                 break;
             }
         }
     });
-})
+});
+
+const gcNameSpace = io.of('/group-chat');
+const GLOBAL_ROOM = 'global-room';
+const usernames = {};
+
+// Helper to generate a random username
+const generateUsername = () => {
+    const adjectives = ['Red', 'Blue', 'Fast', 'Sneaky', 'Loud', 'Cool', 'Brave'];
+    const animals = ['Fox', 'Panda', 'Tiger', 'Wolf', 'Eagle', 'Koala'];
+    const random = Math.floor(Math.random() * 100);
+    const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
+    const animal = animals[Math.floor(Math.random() * animals.length)];
+    return `${adj}${animal}${random}`;
+};
+
+gcNameSpace.on('connection', (socket) => {
+    const userIP = socket.handshake.address;
+    if (gcNamespaceIPs[userIP]) {
+        socket.emit('ip-blocked', 'You are already in a chat room.');
+        return;
+    }
+    gcNamespaceIPs[userIP] = socket.id;
+
+    const username = generateUsername();
+    usernames[socket.id] = username;
+
+    socket.join(GLOBAL_ROOM);
+    socket.emit('joined-room', { username });
+    gcNameSpace.to(GLOBAL_ROOM).emit('user-joined', username);
+
+    socket.on('message', (text) => {
+        gcNameSpace.to(GLOBAL_ROOM).emit('message', {
+            sender: username,
+            text
+        });
+    });
+
+    socket.on('disconnect', () => {
+        delete gcNamespaceIPs[userIP];
+        const name = usernames[socket.id];
+        gcNameSpace.to(GLOBAL_ROOM).emit('user-left', name);
+        delete usernames[socket.id];
+    });
+});
+
+
+
+
 
 const localIP = getLocalIP();
 server.listen(3001, '0.0.0.0', () => {
-    process.stdout.write("\x1Bc"); // Clears the console and resets the cursor position
+    process.stdout.write("\x1Bc");
     console.log(`Server running at http://${localIP}:3001`);
 });

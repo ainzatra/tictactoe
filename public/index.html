@@ -63,7 +63,7 @@
         </div>
     </div>
     <script>
-    const socket = io();
+    const socket = io('/game');
 
     let playerSymbol = null;
     let currentTurn = 'O';
@@ -80,6 +80,10 @@
     socket.on('room-full', () => {
         alert("Room is full. Only 2 players allowed.");
     });
+
+    socket.on('ip-blocked', (msg) => {
+        alert(msg);
+    })
 
     // Update a tile when someone clicks
     socket.on('update-tile', ({ index, value }) => {
