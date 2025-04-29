@@ -48,7 +48,7 @@ gameNameSpace.on('connection', (socket) => {
     console.log('Game user connected:', socket.id);
 
     const userIP = socket.handshake.address;
-    if (gameNamespaceIPs[userIP]) {
+    if (gameNamespaceIPs[userIP] && gameNamespaceIPs[userIP] !== socket.id) {
         socket.emit('ip-blocked', 'You are already in a game room.');
         return;
     }
@@ -89,7 +89,7 @@ chatNameSpace.on('connection', (socket) => {
     console.log('Chat user connected:', socket.id);
 
     const userIP = socket.handshake.address;
-    if (chatNamespaceIPs[userIP]) {
+    if (chatNamespaceIPs[userIP] && chatNamespaceIPs[userIP] !== socket.id) {
         socket.emit('ip-blocked', 'You are already in a chat room.');
         return;
     }
@@ -151,7 +151,7 @@ const generateUsername = () => {
 
 gcNameSpace.on('connection', (socket) => {
     const userIP = socket.handshake.address;
-    if (gcNamespaceIPs[userIP]) {
+    if (gcNamespaceIPs[userIP] && gcNamespaceIPs[userIP] !== socket.id) {
         socket.emit('ip-blocked', 'You are already in a chat room.');
         return;
     }
