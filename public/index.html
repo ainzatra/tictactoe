@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Index</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.5/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-SgOJa3DmI69IUzQ2PVdRZhwQ+dy64/BUtbMJw1MZ8t5HZApcHrRKUc4W0kG879m7" crossorigin="anonymous">
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        table,tr,td,th {
+            border: 1px solid black;
+            border-collapse: collapse;
+        }
+        thead th {
+            text-align: center;
+            font-size: 30px;
+        }
+        td {
+            width: 100px;
+            height: 100px;
+            text-align: center;
+            font-size: 50px;
+            font-weight: bolder;
+            padding: 0px;
+        }
+        td:hover {
+            background-color:rgb(212, 212, 212);
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="game" style="width:600px">
+            <table>
+                <thead>
+                    <tr>
+                        <th colspan="3">Tic Tac Toe</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td onclick="setTile(this)"></td>
+                        <td onclick="setTile(this)"></td>
+                        <td onclick="setTile(this)"></td>
+                    </tr>
+                    <tr>
+                        <td onclick="setTile(this)"></td>
+                        <td onclick="setTile(this)"></td>
+                        <td onclick="setTile(this)"></td>
+                    </tr>
+                    <tr>
+                        <td onclick="setTile(this)"></td>
+                        <td onclick="setTile(this)"></td>
+                        <td onclick="setTile(this)"></td>
+                    </tr>
+                </tbody>
+                <tfoot>
+                    <th colspan="3"><button onclick="resetTiles()">Reset</button></th>
+                </tfoot>
+            </table>
+            <h1>Player Turn: <span id="playerTurn">O</span></h1>
+        </div>
+    </div>
+    <script>
+    const socket = io();
+
+    let playerSymbol = null;
+    let currentTurn = 'O';
+    const tiles = document.querySelectorAll('td');
+    const turnDisplay = document.getElementById('playerTurn');
+
+    // Assign player
+    socket.on('player-assigned', (symbol) => {
+        playerSymbol = symbol;
+        alert(`You are Player ${symbol}`);
+        turnDisplay.innerText = currentTurn;
+    });
+
+    socket.on('room-full', () => {
+        alert("Room is full. Only 2 players allowed.");
+    });
+
+    // Update a tile when someone clicks
+    socket.on('update-tile', ({ index, value }) => {
+        tiles[index].innerText = value;
+        checkWinner(); // Check for a winner after each move
+    });
+
+    // Update turn display
+    socket.on('turn-changed', (newTurn) => {
+        currentTurn = newTurn;
+        turnDisplay.innerText = newTurn;
+    });
+
+    // Reset board for both players
+    socket.on('reset-board', () => {
+        tiles.forEach(t => t.innerText = "");
+        currentTurn = 'O';
+        turnDisplay.innerText = currentTurn;
+    });
+
+    // Check for a winner
+    function checkWinner() {
+        const winningCombinations = [
+            // Rows
+            [0, 1, 2],
+            [3, 4, 5],
+            [6, 7, 8],
+            // Columns
+            [0, 3, 6],
+            [1, 4, 7],
+            [2, 5, 8],
+            // Diagonals
+            [0, 4, 8],
+            [2, 4, 6]
+        ];
+
+        for (let combo of winningCombinations) {
+            const [a, b, c] = combo;
+            if (tiles[a].innerText && tiles[a].innerText === tiles[b].innerText && tiles[a].innerText === tiles[c].innerText) {
+                alert(`Player ${tiles[a].innerText} wins!`);
+                socket.emit('reset');
+                return;
+            }
+        }
+
+        // Check if the board is full (no empty tiles)
+        if ([...tiles].every(tile => tile.innerText !== '')) {
+            alert("It's a draw!");
+            socket.emit('reset');
+        }
+    }
+
+    tiles.forEach((tile, index) => {
+        tile.addEventListener('click', () => {
+            if (tile.innerText !== '') return;  // Tile already clicked
+            if (playerSymbol !== currentTurn) return;  // Not player's turn
+
+            socket.emit('tile-clicked', index);
+        });
+    });
+
+    function resetTiles() {
+        socket.emit('reset');
+    }
+</script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.5/dist/js/bootstrap.bundle.min.js" integrity="sha384-k6d4wzSIapyDyv1kpU366/PK5hCdSbCRGRCMv+eplOQJWyd1fbcAu9OCUj5zNLiq" crossorigin="anonymous"></script>
+</body>
+</html>
